@@ -42,7 +42,7 @@ module Devise
         old_passwords_including_cur_change = old_passwords.order(:id).reverse_order.limit(max_old_passwords).pluck(:encrypted_password)
         old_passwords_including_cur_change << encrypted_password_was # include most recent change in list, but don't save it yet!
         old_passwords_including_cur_change.any? do |old_password|
-          self.class.new(encrypted_password: old_password).valid_password?(password)
+          self.class.new(encrypted_password: old_password, salt: salt).valid_password?(password)
         end
       end
 
