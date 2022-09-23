@@ -41,13 +41,20 @@ module Devise
       def password_archive_included?
         return false unless max_old_passwords.positive?
 
-        old_passwords_including_cur_change = old_passwords.order(created_at: :desc).limit(max_old_passwords).pluck(:encrypted_password)
-        old_passwords_including_cur_change << encrypted_password_was # include most recent change in list, but don't save it yet!
+        old_passwords_including_cur_change = old_passwords.order(created_at: :desc).limit(max_old_passwords).to_a
+        last_password = OldPassword.new password_archivable_type: "User",
+                                        encrypted_password: encrypted_password_was,
+                                        password_salt: password_salt_was,
+                                        password_archivable_id: self.id
+        old_passwords_including_cur_change << last_password
         old_passwords_including_cur_change.any? do |old_password|
           # NOTE: we deliberately do not do mass assignment here so that users that
           #   rely on `protected_attributes_continued` gem can still use this extension.
           #   See issue #68
-          self.class.new.tap { |object| object.encrypted_password = old_password }.valid_password?(password)
+          self.class.new.tap do |object|
+            object.encrypted_password = old_password.encrypted_password
+            object.password_salt = old_password.password_salt
+          end.valid_password?(password)
         end
       end
 
@@ -70,9 +77,9 @@ module Devise
       #   mongoid will keep re-triggering this callback when we add an old password
       def archive_password
         if max_old_passwords.positive?
-          return true if old_passwords.where(encrypted_password: encrypted_password_was).exists?
+          return true if old_passwords.where(encrypted_password: encrypted_password_was, password_salt: password_salt_was).exists?
 
-          old_passwords.create!(encrypted_password: encrypted_password_was) if encrypted_password_was.present?
+          old_passwords.create!(encrypted_password: encrypted_password_was, password_salt: password_salt_was) if encrypted_password_was.present?
           old_passwords.order(created_at: :desc).offset(max_old_passwords).destroy_all
         else
           old_passwords.destroy_all
